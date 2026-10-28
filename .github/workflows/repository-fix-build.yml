@@ -44,63 +44,26 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Set up Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v6
-        with:
-          version: 1.12.1
-
       - name: Install Android SDK packages
         shell: bash
         run: |
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"; fi
-          test -x "$SDKMANAGER"
           set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
           set -o pipefail
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.13113456" "cmake;3.30.3"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Remove Android SDK CMake
-        run: rm -rf "$ANDROID_HOME/cmake"
+      - name: Build manager APK only
+        run: ./gradlew --no-daemon :app:assembleDebug
 
-      - name: Publish libxposed dependencies with JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Publish libxposed dependencies
-        working-directory: libxposed
-        run: |
-          mkdir -p "$HOME/.gradle"
-          printf '%s\n' 'org.gradle.caching=true' 'org.gradle.parallel=true' 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' 'android.native.buildOutput=verbose' >> "$HOME/.gradle/gradle.properties"
-          cd api
-          ./gradlew --no-daemon publishToMavenLocal
-          cd ../service
-          ./gradlew --no-daemon :interface:publishToMavenLocal
-          ./gradlew --no-daemon :service:publishToMavenLocal
-
-      - name: Restore Java 21 for ReLSPosed
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Build ReLSPosed packages
-        run: ./gradlew --no-daemon zipAll
-
-      - name: Prepare manager APKs and report
+      - name: Prepare manager APK and report
         run: |
           mkdir -p build-output
-          for zip in magisk-loader/release/ReLSPosed-v*-zygisk-debug.zip magisk-loader/release/ReLSPosed-v*-zygisk-release.zip; do
-            [ -f "$zip" ] || continue
-            cp "$zip" build-output/
-            unzip -p "$zip" manager.apk > "build-output/$(basename "${zip%.zip}")-manager.apk"
-            unzip -p "$zip" manager.apk.sha256 > "build-output/$(basename "${zip%.zip}")-manager.apk.sha256"
-          done
+          cp app/build/outputs/apk/debug/app-debug.apk build-output/ReLSPosed-manager-debug.apk
+          sha256sum build-output/ReLSPosed-manager-debug.apk > build-output/SHA256SUMS
           ls -lh build-output
-          sha256sum build-output/* > build-output/SHA256SUMS
 
       - name: Upload install packages
         uses: actions/upload-artifact@v4
