@@ -1,0 +1,89 @@
+name: Repository fix build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch or commit to build
+        required: true
+        default: fix/repo-http-fallback
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout patched source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Checkout libxposed API
+        uses: actions/checkout@v4
+        with:
+          repository: libxposed/api
+          path: libxposed/api
+
+      - name: Checkout libxposed service
+        uses: actions/checkout@v4
+        with:
+          repository: libxposed/service
+          path: libxposed/service
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v6
+        with:
+          version: 1.12.1
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Remove Android bundled CMake
+        run: rm -rf "$ANDROID_HOME/cmake"
+
+      - name: Publish libxposed dependencies
+        working-directory: libxposed
+        run: |
+          mkdir -p "$HOME/.gradle"
+          printf '%s\n' 'org.gradle.caching=true' 'org.gradle.parallel=true' 'org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8 -XX:+UseParallelGC' 'android.native.buildOutput=verbose' >> "$HOME/.gradle/gradle.properties"
+          cd api
+          ./gradlew publishToMavenLocal
+          cd ../service
+          ./gradlew publishToMavenLocal
+
+      - name: Build ReLSPosed packages
+        run: ./gradlew --no-daemon zipAll
+
+      - name: Prepare manager APKs and report
+        run: |
+          mkdir -p build-output
+          for zip in magisk-loader/release/ReLSPosed-v*-zygisk-debug.zip magisk-loader/release/ReLSPosed-v*-zygisk-release.zip; do
+            [ -f "$zip" ] || continue
+            cp "$zip" build-output/
+            unzip -p "$zip" manager.apk > "build-output/$(basename "${zip%.zip}")-manager.apk"
+            unzip -p "$zip" manager.apk.sha256 > "build-output/$(basename "${zip%.zip}")-manager.apk.sha256"
+          done
+          ls -lh build-output
+          sha256sum build-output/* > build-output/SHA256SUMS
+
+      - name: Upload install packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReLSPosed-repo-fix-${{ github.run_number }}
+          path: build-output/*
+          if-no-files-found: error
+          retention-days: 30
