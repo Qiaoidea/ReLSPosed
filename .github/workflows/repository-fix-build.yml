@@ -52,23 +52,14 @@ jobs:
       - name: Install Android SDK packages
         shell: bash
         run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
-          SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"; fi
           test -x "$SDKMANAGER"
+          set +o pipefail
           yes | "$SDKMANAGER" --licenses >/dev/null
-          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.13113456"
-          "$SDKMANAGER" --list | grep -E 'cmake;3\.(29|30|31)\.' | head -20 || true
-
-      - name: Install Android CMake
-        run: |
-          SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/cmdline-tools/latest/bin/sdkmanager"
-          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"; fi
-          CMK="$($SDKMANAGER --list | sed -n 's/^[[:space:]]*cmake;\([0-9.]*\)[[:space:]].*/\1/p' | sort -V | awk '$1 >= "3.29.8" {print; exit}')"
-          if [ -z "$CMK" ]; then echo 'No Android SDK CMake >= 3.29.8 found'; exit 1; fi
-          yes | "$SDKMANAGER" "cmake;$CMK"
+          set -o pipefail
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.13113456" "cmake;3.30.3"
 
       - name: Publish libxposed dependencies
         working-directory: libxposed
