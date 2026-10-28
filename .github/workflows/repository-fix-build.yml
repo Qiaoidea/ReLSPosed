@@ -6,7 +6,7 @@ on:
       source_ref:
         description: Branch or commit to build
         required: true
-        default: fix/repo-http-fallback
+        default: 1e8a391474c06707b9fb0af000ebd90953b85c63
         type: string
 
 permissions:
