@@ -27,12 +27,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: libxposed/api
+          ref: 100
           path: libxposed/api
 
       - name: Checkout libxposed service
         uses: actions/checkout@v4
         with:
           repository: libxposed/service
+          ref: 100
           path: libxposed/service
 
       - name: Set up Java 21
