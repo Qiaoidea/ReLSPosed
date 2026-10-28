@@ -51,9 +51,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Remove Android bundled CMake
-        run: rm -rf "$ANDROID_HOME/cmake"
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;29.0.13113456 cmake;3.29.8'
+          accept-android-sdk-licenses: true
 
       - name: Publish libxposed dependencies
         working-directory: libxposed
