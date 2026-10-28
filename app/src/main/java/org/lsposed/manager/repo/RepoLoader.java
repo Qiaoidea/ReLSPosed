@@ -101,8 +101,12 @@ public class RepoLoader {
         IOException lastError = null;
         String[] candidateRepoUrls = {originRepoUrl, backupRepoUrl, secondBackupRepoUrl};
         for (String candidateRepoUrl : candidateRepoUrls) {
+            String requestUrl = candidateRepoUrl + "modules.json";
+            Log.e(App.TAG, "REPO_TRACE start url=" + requestUrl);
             try (var response = App.getOkHttpClient().newCall(
-                    new Request.Builder().url(candidateRepoUrl + "modules.json").build()).execute()) {
+                    new Request.Builder().url(requestUrl).build()).execute()) {
+                Log.e(App.TAG, "REPO_TRACE response url=" + response.request().url()
+                        + " code=" + response.code() + " successful=" + response.isSuccessful());
                 if (!response.isSuccessful()) {
                     throw new IOException("Repository HTTP " + response.code()
                             + " from " + response.request().url());
@@ -138,6 +142,9 @@ public class RepoLoader {
             } catch (Throwable error) {
                 lastError = error instanceof IOException ? (IOException) error
                         : new IOException("Unable to load repository from " + candidateRepoUrl, error);
+                Log.e(App.TAG, "REPO_TRACE failure url=" + candidateRepoUrl
+                        + " exception=" + error.getClass().getName()
+                        + " message=" + error.getMessage(), error);
                 Log.e(App.TAG, "load remote data from " + candidateRepoUrl, error);
             }
         }
