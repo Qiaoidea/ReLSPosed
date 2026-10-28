@@ -55,6 +55,11 @@ jobs:
           set -o pipefail
           "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Confirm diagnostic source
+        run: |
+          grep -q 'REPO_TRACE start' app/src/main/java/org/lsposed/manager/repo/RepoLoader.java
+          sha256sum app/src/main/java/org/lsposed/manager/repo/RepoLoader.java
+
       - name: Build manager APK only
         run: ./gradlew --no-daemon :app:assembleDebug
 
