@@ -69,7 +69,8 @@ jobs:
           cd api
           ./gradlew publishToMavenLocal
           cd ../service
-          ./gradlew publishToMavenLocal
+          ./gradlew :interface:publishToMavenLocal
+          ./gradlew :service:publishToMavenLocal
 
       - name: Build ReLSPosed packages
         run: ./gradlew --no-daemon zipAll
