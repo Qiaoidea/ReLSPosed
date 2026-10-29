@@ -38,4 +38,19 @@
 - 修复代码以文件日志取证（绕开 LOG_FLOWCTRL）：`loadLocalData parsed modules=1131` → `loadRemoteData success url=https://modules.lsposed.org// modules=1253` → `repo.json` 落盘 2.34MB —— **远程加载 1.2s 成功**
 - UI：仓库页副标题由「加载中…」变为「**3 个模块可更新**」，列表完整显示（含可更新高亮/更新时间）
 - 验证方式说明：因注入遮蔽，验证时将本构建替换了 `/data/adb/modules/zygisk_lsposed/manager.apk`（原文件已备份于 `/data/local/tmp/manager.apk.orig`）
-- ⚠️ **对正式发布的含义**：只要 framework 内置 manager 还是旧代码，**安装新 manager APK 无法修复寄生/注入场景** —— framework 与 manager 需同步携带本修复
+### 对发布路径的含义（已核实构建链路）
+
+`magisk-loader/build.gradle.kts:165-167`：
+
+```kotlin
+from(project(":app").tasks.getByName("package$buildTypeCapped").outputs) {
+    include("*.apk")
+    rename(".*\\.apk", "manager.apk")
+}
+```
+
+framework zip 内的 `manager.apk` **直接由 `:app` 构建产物重命名而来**，不另走独立源码。因此：
+
+- ✅ **新构建的 framework 会自动携带本修复**，无需额外改动 framework 侧代码或脚本
+- ⚠️ **但对已刷旧 framework 的设备，仅升级 manager APK 无效** —— 注入副本遮蔽安装 APK（发现 0）。这类用户必须**刷入含本修复的新 framework**，或手动替换 `/data/adb/modules/zygisk_lsposed/manager.apk`（本次验证即采用此路径）
+- 建议 release note 明确提示：「升级 manager 后仓库页仍空白 → 请同步刷入新版 framework」
