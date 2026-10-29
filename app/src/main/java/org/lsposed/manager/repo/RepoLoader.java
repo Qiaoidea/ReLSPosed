@@ -76,7 +76,7 @@ public class RepoLoader {
     private final Path repoFile = Paths.get(App.getInstance().getFilesDir().getAbsolutePath(), "repo.json");
     private final Set<RepoListener> listeners = ConcurrentHashMap.newKeySet();
     private boolean repoLoaded = false;
-    private static final String originRepoUrl = "https://modules.lsposed.org/";
+    private static final String originRepoUrl = "https://modules.lsposed.org//";
     private static final String backupRepoUrl = "https://modules-blogcdn.lsposed.org/";
 
     private static final String secondBackupRepoUrl = "https://modules-cloudflare.lsposed.org/";
@@ -97,37 +97,82 @@ public class RepoLoader {
     }
 
     synchronized public void loadRemoteData() {
-        repoLoaded = false;
-        try {
-            try (var response = App.getOkHttpClient().newCall(new Request.Builder().url(repoUrl + "modules.json").build()).execute()) {
-
-                if (response.isSuccessful()) {
-                    ResponseBody body = response.body();
-                    if (body != null) {
-                        try {
-                            String bodyString = body.string();
-                            Files.write(repoFile, bodyString.getBytes(StandardCharsets.UTF_8));
-                            loadLocalData(false);
-                        } catch (Throwable t) {
-                            Log.e(App.TAG, Log.getStackTraceString(t));
-                            for (RepoListener listener : listeners) {
-                                listener.onThrowable(t);
-                            }
-                        }
+        // Keep repoLoaded=true during the refresh: the in-memory catalog
+        // stays valid while we probe the mirrors, so listeners (the repo
+        // list UI) keep showing the previous data instead of a blank
+        // "loading" state. Both the success path (loadLocalData) and the
+        // failure path below restore/confirm repoLoaded=true.
+        IOException lastError = null;
+        String[] candidateRepoUrls = {originRepoUrl, backupRepoUrl, secondBackupRepoUrl};
+        for (String candidateRepoUrl : candidateRepoUrls) {
+            String requestUrl = candidateRepoUrl + "modules.json";
+            Log.e(App.TAG, "REPO_TRACE start url=" + requestUrl);
+            try (var response = App.getOkHttpClient().newCall(
+                    new Request.Builder().url(requestUrl).build()).execute()) {
+                Log.e(App.TAG, "REPO_TRACE response url=" + response.request().url()
+                        + " code=" + response.code() + " successful=" + response.isSuccessful());
+                if (!response.isSuccessful()) {
+                    throw new IOException("Repository HTTP " + response.code()
+                            + " from " + response.request().url());
+                }
+                ResponseBody body = response.body();
+                if (body == null) {
+                    throw new IOException("Repository returned an empty response body");
+                }
+                String bodyString = body.string();
+                OnlineModule[] parsedModules = new Gson().fromJson(bodyString, OnlineModule[].class);
+                if (parsedModules == null || parsedModules.length == 0) {
+                    throw new IOException("Repository returned an empty or invalid module list");
+                }
+                for (OnlineModule module : parsedModules) {
+                    if (module == null || module.getName() == null || module.getName().isEmpty()) {
+                        throw new IOException("Repository module list contains an invalid entry");
                     }
                 }
+
+                Path temporaryRepoFile = repoFile.resolveSibling("repo.json.tmp");
+                Files.write(temporaryRepoFile, bodyString.getBytes(StandardCharsets.UTF_8));
+                try {
+                    Files.move(temporaryRepoFile, repoFile,
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                    Files.move(temporaryRepoFile, repoFile,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                repoUrl = candidateRepoUrl;
+                loadLocalData(false);
+                return;
+            } catch (Throwable error) {
+                lastError = error instanceof IOException ? (IOException) error
+                        : new IOException("Unable to load repository from " + candidateRepoUrl, error);
+                Log.e(App.TAG, "REPO_TRACE failure url=" + candidateRepoUrl
+                        + " exception=" + error.getClass().getName()
+                        + " message=" + error.getMessage(), error);
+                Log.e(App.TAG, "load remote data from " + candidateRepoUrl, error);
             }
-        } catch (Throwable e) {
-            Log.e(App.TAG, "load remote data", e);
+        }
+
+        if (lastError != null) {
             for (RepoListener listener : listeners) {
-                listener.onThrowable(e);
+                listener.onThrowable(lastError);
             }
-            if (repoUrl.equals(originRepoUrl)) {
-                repoUrl = backupRepoUrl;
-                loadRemoteData();
-            } else if (repoUrl.equals(backupRepoUrl)) {
-                repoUrl = secondBackupRepoUrl;
-                loadRemoteData();
+        }
+        // Prefer the in-memory one (already parsed and shown), and only go
+        // back to disk when nothing is loaded yet. loadLocalData() sets
+        // repoLoaded=false on entry, so calling it here would blank the UI
+        // for every listener that reads getOnlineModules() afterwards.
+        if (!onlineModules.isEmpty()) {
+            repoLoaded = true;
+            for (RepoListener listener : listeners) {
+                listener.onRepoLoaded();
+            }
+        } else if (Files.exists(repoFile)) {
+            loadLocalData(false);
+        } else {
+            repoLoaded = true;
+            for (RepoListener listener : listeners) {
+                listener.onRepoLoaded();
             }
         }
     }
@@ -267,6 +312,23 @@ public class RepoLoader {
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) {
+                if (!response.isSuccessful()) {
+                    IOException error = new IOException("Repository HTTP " + response.code()
+                            + " from " + response.request().url());
+                    response.close();
+                    if (repoUrl.equals(originRepoUrl)) {
+                        repoUrl = backupRepoUrl;
+                        loadRemoteReleases(packageName);
+                    } else if (repoUrl.equals(backupRepoUrl)) {
+                        repoUrl = secondBackupRepoUrl;
+                        loadRemoteReleases(packageName);
+                    } else {
+                        for (RepoListener listener : listeners) {
+                            listener.onThrowable(error);
+                        }
+                    }
+                    return;
+                }
                 if (response.isSuccessful()) {
                     ResponseBody body = response.body();
                     if (body != null) {
