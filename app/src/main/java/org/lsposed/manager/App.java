@@ -247,7 +247,12 @@ public class App extends Application {
         if (okHttpClient != null) return okHttpClient;
         var builder = new OkHttpClient.Builder()
             .cache(getOkHttpCache())
-            .dns(new CloudflareDNS());
+            .dns(new CloudflareDNS())
+            // An absolute per-call deadline: a server that accepts the TLS
+            // handshake but never sends response bytes must not wedge the
+            // repository loader forever (callTimeout covers DNS + connect
+            // + read and is never reset by intermediate traffic).
+            .callTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
         if (BuildConfig.DEBUG) {
             var log = new HttpLoggingInterceptor();
             log.setLevel(HttpLoggingInterceptor.Level.HEADERS);

@@ -97,7 +97,11 @@ public class RepoLoader {
     }
 
     synchronized public void loadRemoteData() {
-        repoLoaded = false;
+        // Keep repoLoaded=true during the refresh: the in-memory catalog
+        // stays valid while we probe the mirrors, so listeners (the repo
+        // list UI) keep showing the previous data instead of a blank
+        // "loading" state. Both the success path (loadLocalData) and the
+        // failure path below restore/confirm repoLoaded=true.
         IOException lastError = null;
         String[] candidateRepoUrls = {originRepoUrl, backupRepoUrl, secondBackupRepoUrl};
         for (String candidateRepoUrl : candidateRepoUrls) {
@@ -154,8 +158,16 @@ public class RepoLoader {
                 listener.onThrowable(lastError);
             }
         }
-        // A failed refresh must not discard a previously usable local catalog.
-        if (Files.exists(repoFile)) {
+        // Prefer the in-memory one (already parsed and shown), and only go
+        // back to disk when nothing is loaded yet. loadLocalData() sets
+        // repoLoaded=false on entry, so calling it here would blank the UI
+        // for every listener that reads getOnlineModules() afterwards.
+        if (!onlineModules.isEmpty()) {
+            repoLoaded = true;
+            for (RepoListener listener : listeners) {
+                listener.onRepoLoaded();
+            }
+        } else if (Files.exists(repoFile)) {
             loadLocalData(false);
         } else {
             repoLoaded = true;

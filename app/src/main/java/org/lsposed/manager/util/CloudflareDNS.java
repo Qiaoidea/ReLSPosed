@@ -42,6 +42,9 @@ public final class CloudflareDNS implements Dns {
                         .cache(App.getOkHttpCache())
                         .sslSocketFactory(new NoSniFactory(), trustManager)
                         .connectionSpecs(List.of(tls))
+                        // Keep a single DoH attempt short so lookup() fails
+                        // fast and can fall back to the system resolver.
+                        .callTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
                         .build());
         try {
             builder.bootstrapDnsHosts(List.of(
@@ -58,7 +61,14 @@ public final class CloudflareDNS implements Dns {
     @Override
     public List<InetAddress> lookup(@NonNull String hostname) throws UnknownHostException {
         if (DoH && noProxy) {
-            return cloudflare.lookup(hostname);
+            try {
+                return cloudflare.lookup(hostname);
+            } catch (UnknownHostException e) {
+                // The DoH endpoints may be unreachable (blocked networks);
+                // fall back to the system resolver instead of failing the
+                // whole request.
+                return SYSTEM.lookup(hostname);
+            }
         } else {
             return SYSTEM.lookup(hostname);
         }
